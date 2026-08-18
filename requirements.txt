@@ -1,0 +1,6 @@
+# Tool dataset mat bang bietthu - nhom N3
+requests>=2.31
+beautifulsoup4>=4.12
+opencv-python>=4.9
+numpy>=1.26
+openpyxl>=3.1

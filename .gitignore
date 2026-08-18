@@ -1,0 +1,22 @@
+# Ket qua chay - KHONG day len git.
+# Anh ban ve thuoc ban quyen don vi thiet ke, chi luu noi bo.
+output/
+output_*/
+*.xlsx
+
+# Anh tai ve
+*.jpg
+*.jpeg
+*.png
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / he dieu hanh
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
