@@ -68,6 +68,20 @@ Bộ lọc mạnh nhất là đếm đoạn thẳng ngang/dọc (`imgcheck.axis_
 
 Ngưỡng nằm ở `config.MIN_AXIS_LINES = 12`. Thấy tool loại oan nhiều bản vẽ thật thì hạ xuống; thấy rác lọt nhiều thì nâng lên.
 
+### Hiệu chỉnh `LINEART_WHITE_RATIO` trên 25 ảnh thật
+
+Đo trên 25 ảnh tải từ 8 nguồn, nhãn tay sau khi xem tận mắt:
+
+| Ngưỡng | Giữ đúng | Loại oan (C) | Rác lọt (G) |
+|---|---|---|---|
+| 0.55 (cũ) | 13 | **6** | 0 |
+| 0.50 | 14 | 5 | 0 |
+| **0.42 (đang dùng)** | **18** | **1** | **0** |
+
+Ngưỡng 0.55 loại oan 6/19 bản vẽ thật — toàn **mặt bằng tô màu** (sàn xám, sân xanh, WC xanh dương) nên tỷ lệ pixel trắng chỉ 0.45–0.50. Hạ xuống 0.42 cứu được 5 mẫu mà **không cho render nào lọt**, vì bộ lọc đếm đường thẳng chặn tiếp: render có `lines` thấp hoặc không phải trục giao.
+
+Bộ lọc đường thẳng chính là thứ cho phép nới `white_ratio` an toàn. Hai bộ lọc bù nhau: `white_ratio` bắt ảnh chụp và render tối, `axis_line_score` bắt phối cảnh sáng màu.
+
 Cái bộ lọc này **không** làm được: phân biệt biệt thự với nhà ống, đánh giá tường bao, đọc nhãn phòng, đếm phòng. Đó là lý do vẫn cần người chấm.
 
 ## Pipeline
@@ -128,6 +142,26 @@ Lý do cụ thể nằm ở cột `ghi_chu`. Cuối tuần 1 lọc `output/_tam/
 Site cũng chặn phân trang (`Disallow: */page/*`) nên phải liệt kê qua sitemap — xem chế độ `sitemap` trong `config.SOURCES`.
 
 **Tool tự kiểm tra tín hiệu này.** `crawler.ai_train_signal()` đọc `Content-Signal` trong robots.txt; gặp `ai-train=no` thì `allowed()` trả `False` và mọi request tới host đó dừng lại. Không cần nhớ thủ công.
+
+## Bảng nguồn đã kiểm tra
+
+| Nguồn | Kết quả | Ghi chú |
+|---|---|---|
+| `neohouse.vn` | **dùng được** | 131 dự án + 7 trang tổng hợp. Ảnh 1100x713 |
+| `noithaticon.vn` | **dùng được** | Bản vẽ CAD 1280x905 — nguồn duy nhất đạt tiêu chí 17 |
+| `tanphatcompany.com` | **dùng được** | Mặt bằng tô màu 2326x1729, cần ngưỡng `white_ratio` ≤ 0.50 |
+| `kientructrangkim.com` | **dùng được** | Mặt bằng thật nhưng chỉ 750x531 |
+| `nhadepktv.vn` | một phần | Có mặt bằng thật nhưng toàn **nhà phố** — quota N1, không phải N3 |
+| `lg.com.vn` | một phần | Bản vẽ thật, ảnh rất nhỏ (cạnh ngắn 279–338px) |
+| `betaviet.vn` | không | 5.912 URL, **0 URL nào có "mat-bang"** |
+| `vietnamarch.com.vn` | không | 441 ảnh/15 trang, 0 mặt bằng. Alt ghi "Bản vẽ" cho cả render |
+| `decoxdesign.com` | không | Nhồi SEO: tên file `mat-bang-...` nhưng là ảnh chụp nội thất |
+| `vinavic.vn` | không | Nhồi SEO tương tự, ảnh là phối cảnh mặt đứng |
+| `akisa.vn` `nhaxinhdesign.com` | không | Không có URL nào chứa "mat-bang" |
+| `sbsvilla.vn` `sbshouse.vn` | **chặn** | robots.txt khai báo `ai-train=no` |
+| `shac.vn` | không | Watermark chạy ngang giữa bản vẽ trên mọi ảnh |
+
+**Bài học chung: tên file và alt text không đáng tin.** Bốn nguồn nhồi từ khóa `mat-bang` vào tên ảnh render để SEO. Cách duy nhất chắc chắn là tải vài ảnh về và nhìn.
 
 ## Kiểm tra một nguồn mới
 

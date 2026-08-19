@@ -157,12 +157,49 @@ def sitemap_links(sitemap_url: str, pattern: re.Pattern, limit: int) -> list[str
     return found
 
 
+def seed_links(seeds: list[str], pattern: re.Pattern, limit: int) -> list[str]:
+    """Di tu vai trang goc, gom cac trang cung chu de tren cung ten mien.
+
+    Dung cho TRANG TONG HOP - kieu bai "15+ mau mat bang biet thu" gom san
+    hang chuc ban ve trong mot trang. Mot trang nhu vay bang 15-20 trang du an,
+    va nhieu site khong co sitemap nen khong liet ke duong khac duoc.
+    Ban than cac seed cung la trang co anh, nen chung nam trong ket qua.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for seed in seeds:
+        if seed not in seen:
+            seen.add(seed)
+            found.append(seed)
+        resp = get(seed)
+        if resp is None:
+            continue
+        soup = BeautifulSoup(resp.text, "html.parser")
+        host = up.urlparse(seed).netloc
+        for a in soup.select("a[href]"):
+            href = up.urljoin(seed, a["href"]).split("#")[0].split("?")[0]
+            p = up.urlparse(href)
+            if p.netloc != host or href in seen:
+                continue
+            if not pattern.search(p.path) or C.REJECT_PROJECT.search(p.path):
+                continue
+            seen.add(href)
+            found.append(href)
+            if len(found) >= limit:
+                return found
+    return found
+
+
 def project_links(source_key: str, limit: int = 200) -> list[str]:
     src = C.SOURCES[source_key]
     pattern = re.compile(src["project_url_pattern"])
 
     if src.get("sitemap"):
         return sitemap_links(src["sitemap"], pattern, limit)
+
+    if src.get("seeds"):
+        return seed_links(src["seeds"], pattern, limit)
 
     found: list[str] = []
     seen: set[str] = set()
@@ -174,25 +211,30 @@ def project_links(source_key: str, limit: int = 200) -> list[str]:
             if resp is None:
                 break
             soup = BeautifulSoup(resp.text, "html.parser")
-            hits = 0
+            khop = 0          # so link du an tren trang, ke ca da thay roi
             for a in soup.select("a[href]"):
                 href = up.urljoin(url, a["href"])
                 if not pattern.search(up.urlparse(href).path):
                     continue
+                khop += 1
                 if href in seen:
                     continue
-                # Kiem tra CA tieu de lan slug URL: nhieu the <a> chi co anh,
-                # khong co chu, nen loc theo tieu de mot minh se lot nha pho.
-                title = a.get_text(" ", strip=True)
+                # CHI loc theo slug URL. Chu trong the <a> khong dang tin: nhieu
+                # the boc ca khoi card nen get_text() quet luon tieu de cua du an
+                # ben canh, lam loai oan nhung du an hoan toan hop le.
                 slug = up.urlparse(href).path
-                if C.REJECT_PROJECT.search(title) or C.REJECT_PROJECT.search(slug):
+                if C.REJECT_PROJECT.search(slug):
                     continue          # nha pho / nha ong = quota cua nhom N1
                 seen.add(href)
                 found.append(href)
-                hits += 1
                 if len(found) >= limit:
                     return found
-            if hits == 0:
+
+            # Dung khi trang KHONG CON link du an nao. Truoc day dung khi khong
+            # co link MOI nao - nhung cac danh muc cua neohouse trung nhau rat
+            # nhieu, nen trang 1 cua danh muc thu ba tro di toan link da thay,
+            # lam vong lap thoat ngay va bo mat trang 2-3 cua ba danh muc cuoi.
+            if khop == 0:
                 break
     return found
 
@@ -208,6 +250,39 @@ def parse_title_meta(title: str) -> dict:
     if code:
         meta["ma_du_an"] = code.group(1).replace(" ", "").upper()
     return meta
+
+
+_LAZY_ATTR = ("src", "data-src", "data-lazy-src", "data-original",
+              "data-lazy", "data-echo")
+
+
+def _src_that(img) -> str:
+    """Lay URL anh THAT tu the <img>, ke ca khi site dung lazy-load.
+
+    Rat nhieu site Viet Nam nap luoi: thuoc tinh `src` chi la anh placeholder
+    (hoac trong), con URL that nam o `data-src`. Chi doc `src` la mat trang
+    nguon - vinavic.vn co 89 anh nam ngoai `src`, doc thieu thanh 0 ung vien.
+    """
+    for k in _LAZY_ATTR:
+        v = (img.get(k) or "").strip()
+        if v and not v.startswith("data:"):
+            return v
+
+    # srcset: "anh-480.jpg 480w, anh-1200.jpg 1200w" -> lay ban rong nhat
+    for k in ("srcset", "data-srcset"):
+        v = (img.get(k) or "").strip()
+        if not v:
+            continue
+        ung = []
+        for phan in v.split(","):
+            m = phan.strip().split()
+            if not m:
+                continue
+            rong = int(m[1][:-1]) if len(m) > 1 and m[1].endswith("w") else 0
+            ung.append((rong, m[0]))
+        if ung:
+            return max(ung)[1]
+    return ""
 
 
 def scan_project(project_url: str) -> tuple[list[dict], dict]:
@@ -230,9 +305,9 @@ def scan_project(project_url: str) -> tuple[list[dict], dict]:
     meta = parse_title_meta(title)
 
     out: list[dict] = []
-    for img in soup.select("img[src]"):
+    for img in soup.find_all("img"):
         st["the_img"] += 1
-        src = up.urljoin(project_url, img.get("src") or "")
+        src = up.urljoin(project_url, _src_that(img))
         if not src.lower().split("?")[0].endswith(C.ALLOWED_EXT):
             st["sai_duoi"] += 1
             continue

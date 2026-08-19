@@ -31,6 +31,7 @@ import argparse
 import csv
 import os
 import sys
+import urllib.parse as up
 
 import assess
 import config as C
@@ -164,9 +165,10 @@ def cmd_crawl(args) -> None:
             if state == "loai":
                 fname = _loai_filename(rep.phash, ext)
             else:
-                tang = (v.get("so_tang_tren_anh")
-                        if ctx.get("so_tang", 0) and ctx["so_tang"] > 1 else None)
-                fname = _filename(idx, tang, ext)
+                # Gan hau to bat cu khi nao doc duoc tang cua ban ve, ke ca nha
+                # 1 tang. Tieu chi 08 doi moi file la mot tang - ten file noi ro
+                # thi nguoi cham doi chieu duoc ngay, khong phai mo anh len xem.
+                fname = _filename(idx, v.get("so_tang_tren_anh") or None, ext)
             os.replace(tmp, os.path.join(DEST_DIR[state], fname))
 
             if state != "loai":
@@ -323,6 +325,67 @@ def cmd_probe(args) -> None:
           f"{args.source} --limit 5")
 
 
+# --------------------------------------------------------------------- screen
+def cmd_screen(args) -> None:
+    """Sang NHIEU nguon mot luot: nguon nao dang cao, nguon nao bo.
+
+    Voi moi URL bao 4 tin hieu, khong tai anh nao:
+      ai-train  - chu site co tu choi cho huan luyen mo hinh khong
+      mat_bang  - so lan chuoi 'mat bang' xuat hien trong HTML tho
+      ung_vien  - so anh qua duoc bo loc alt/caption/ten file
+      ket luan  - CAO / BO / CHAN
+    """
+    urls = list(args.urls or [])
+    if args.file:
+        with open(args.file, encoding="utf-8-sig") as fh:
+            urls += [d.strip() for d in fh if d.strip() and not d.startswith("#")]
+    if not urls:
+        sys.exit("Can --urls <url...> hoac --file <danh_sach.txt>")
+
+    print(f"Sang {len(urls)} nguon - chi doc HTML, khong tai anh.\n")
+    print(f"{'nguon':<26}{'ai-train':<11}{'mat_bang':>9}{'ung_vien':>10}  ket luan")
+    print("-" * 78)
+
+    nen_cao = []
+    for u in urls:
+        host = up.urlparse(u).netloc or u
+        u = u if u.startswith("http") else f"https://{u}"
+
+        tin = crawler.ai_train_signal(u)
+        if tin == "no":
+            print(f"{host:<26}{'no':<11}{'-':>9}{'-':>10}  CHAN - chu site tu choi")
+            continue
+
+        resp = crawler.get(u)
+        if resp is None:
+            print(f"{host:<26}{tin or '-':<11}{'-':>9}{'-':>10}  BO - khong tai duoc")
+            continue
+
+        tho = resp.text.lower()
+        mb = sum(tho.count(t) for t in ("mặt bằng", "mat bang", "mat-bang"))
+        cands, st = crawler.scan_project(u)
+        n = st["ung_vien"]
+
+        if n >= 3 or (mb >= 5 and n >= 1):
+            ket, nen_cao = "CAO - dang thu", nen_cao + [host]
+        elif mb == 0:
+            ket = "BO - khong nhac mat bang"
+        elif n == 0:
+            ket = "NGO - co chu nhung 0 anh khop"
+        else:
+            ket = "NGO - it ung vien"
+        print(f"{host:<26}{tin or 'khong':<11}{mb:>9}{n:>10}  {ket}")
+
+    print("\n" + "-" * 78)
+    if nen_cao:
+        print(f"Nen dao sau {len(nen_cao)} nguon: {', '.join(nen_cao)}")
+        print("Buoc tiep: python main.py probe --url \"<url cu the>\" de xem ky.")
+    else:
+        print("Khong nguon nao dat nguong. Thu URL khac cua cung site truoc khi bo.")
+    print("Luu y: 'NGO' khong co nghia la bo - co the URL nay la trang tong hop,")
+    print("hay thu mot trang du an cu the cua site do.")
+
+
 # --------------------------------------------------------------------- check
 def cmd_check(args) -> None:
     _ensure_dirs()
@@ -353,7 +416,7 @@ def cmd_check(args) -> None:
         if state == "loai":
             fname = _loai_filename(rep.phash, ext)
         else:
-            fname = _filename(idx, None, ext)
+            fname = _filename(idx, v.get("so_tang_tren_anh") or None, ext)
             dedup.add(rep.phash, fname)
             idx += 1
         rows.append(_row(fname, {"project_url": "thu_cong", "url": path}, rep, v, state))
@@ -435,6 +498,11 @@ def main() -> None:
     p.add_argument("--source", default="neohouse")
     p.add_argument("--limit", type=int, default=50, help="so trang du an toi da")
     p.set_defaults(func=cmd_crawl)
+
+    p = sub.add_parser("screen", help="sang nhieu nguon mot luot truoc khi cao")
+    p.add_argument("--urls", nargs="+", help="danh sach URL cach nhau bang dau cach")
+    p.add_argument("--file", help="file txt, moi dong mot URL")
+    p.set_defaults(func=cmd_screen)
 
     p = sub.add_parser("check", help="cham anh da co san trong thu muc")
     p.add_argument("--dir", required=True)

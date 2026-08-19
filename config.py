@@ -18,9 +18,22 @@ TARGET_PASS_RATE = 0.90
 
 # ---------------------------------------------------------------- nguong may check
 MIN_SHORT_EDGE = 800          # tieu chi 17, do SAU khi crop khung ban ve
-SOFT_SHORT_EDGE = 640         # duoi nguong nay moi loai thang; 640-800 -> 'tam'
+
+# Duoi nguong nay moi loai thang; tu day den 800 -> 'tam', nguoi cham quyet.
+# Ha tu 640 xuong 500 sau khi do thuc te tren cac nguon Viet Nam:
+#   noithaticon 1280x905 (dat) · neohouse 1100x713 · trangkim 750x531
+# Rat nhieu site dang mat bang that o co 700-800px hoac nho hon. Loai cung
+# chung dong nghia bo ca nguon, trong khi ha nguong chi lam ton cong cham tay.
+# Moi mau duoi 800px deu bi danh dau TC:17 trong cot ghi_chu de loc lai sau.
+SOFT_SHORT_EDGE = 500
 PHASH_THRESHOLD = 8           # Hamming distance <= 8 coi la trung
-LINEART_WHITE_RATIO = 0.55    # ban ve CAD nen trang chiem > 55%
+# Hieu chinh tren 25 anh that tai ve tu 8 nguon (xem README muc Hieu chinh):
+#   render / anh chup : white_ratio 0.01 - 0.35
+#   ban ve that       : white_ratio 0.45 - 0.90
+# Nguong 0.42 nam giua khoang trong do. Muc 0.55 cu loai oan 6/19 ban ve that,
+# chu yeu la ban ve TO MAU (san vuon xanh, phong tam xanh) - dang rat pho bien
+# o cac cong ty thiet ke Viet Nam. Bo loc dem duong thang chan not phan con lai.
+LINEART_WHITE_RATIO = 0.42
 WATERMARK_GRAY_RATIO = 0.06   # ty le pixel xam nhat o vung trung tam
 MIN_CONTRAST_STD = 25         # do lech chuan xam, tranh anh gan trang/gan den
 
@@ -32,7 +45,9 @@ ASPECT_MIN = 0.35             # loai banner ngang va dai bang doc
 ASPECT_MAX = 2.80
 
 MAX_ROOMS_GEPLAN = 8          # tieu chi 20
-ALLOWED_EXT = (".jpg", ".jpeg", ".png")
+# .webp co mat vi nhieu site Viet Nam dung plugin chuyen doi, dat ten kieu
+# "mat-bang.jpg.webp". OpenCV doc duoc webp nen khong can xu ly rieng.
+ALLOWED_EXT = (".jpg", ".jpeg", ".png", ".webp")
 
 # ---------------------------------------------------------------- loc alt/caption
 # Dau phan cach linh hoat: khop ca "mat bang", "mặt bằng" lan "mat-bang" trong
@@ -82,10 +97,17 @@ VN_HINT = re.compile(
 
 # Loai bo du an that ra la nha ong (quota cua N1)
 REJECT_PROJECT = re.compile(
-    r"(biet\s*thu\s*pho|biệt\s*thự\s*phố|"
-    r"nha\s*pho|nhà\s*phố|nha-pho|"
-    r"mat\s*tien\s*[4-7](\.\d)?\s*m|mặt\s*tiền\s*[4-7](\.\d)?\s*m|"
-    r"\b[4-7](\.\d)?\s*x\s*\d{2}\s*m|"
+    rf"(biet{_S}thu{_S}pho|biệt{_S}thự{_S}phố|"
+    rf"nha{_S}pho|nhà{_S}phố|"
+    # Loai cong trinh khong phai nha o - gap tren trang tong hop cua nhieu site
+    rf"khach{_S}san|khách{_S}sạn|nha{_S}xuong|nhà{_S}xưởng|"
+    rf"van{_S}phong|văn{_S}phòng|lau{_S}dai|lâu{_S}đài|"
+    rf"chung{_S}cu|chung{_S}cư|can{_S}ho|căn{_S}hộ|"
+    rf"mat{_S}tien{_S}[4-7](\.\d)?{_S}m|mặt{_S}tiền{_S}[4-7](\.\d)?{_S}m|"
+    # Chi loai lo THAT SU dai: ngang 4-7m VA sau >= 18m (ty le tu 1:2.6 tro len).
+    # Truoc day bat moi "[4-7]x<hai chu so>m" nen loai oan ca 7x10m - lo vuong
+    # ty le 1:1.4, dung chuan biet thu. Loai oan la kieu mat quota am tham nhat.
+    r"\b[4-7](\.\d)?\s*x\s*(1[89]|[2-9]\d)\s*m|"
     r"[-/]np\d+/?$)",                  # ma du an NP.. = nha pho
     re.I,
 )
@@ -128,6 +150,43 @@ SOURCES = {
         ],
         "project_url_pattern": r"/portfolio/[^/]+/?$",
         "max_pages": 5,
+    },
+    # Nguon dung TRANG TONG HOP: mot trang gom hang chuc ban ve, bang 15-20
+    # trang du an. Xem crawler.seed_links().
+    "noithaticon": {
+        "name": "ICON INTERIOR - mat bang biet thu",
+        "seeds": ["https://noithaticon.vn/mat-bang-biet-thu/"],
+        "project_url_pattern": r"/mat-bang-biet-thu/",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "neohouse_tonghop": {
+        "name": "NEOHouse - trang tong hop mat bang",
+        "seeds": [
+            "https://neohouse.vn/mat-bang-biet-thu/",
+            "https://neohouse.vn/mat-bang-biet-thu-1-tang/",
+            "https://neohouse.vn/mat-bang-biet-thu-2-tang/",
+        ],
+        "project_url_pattern": r"/mat-bang-biet-thu",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "tanphat": {
+        "name": "Tan Phat - mat bang biet thu",
+        "seeds": ["https://tanphatcompany.com/mat-bang-biet-thu-3-tang/",
+                  "https://tanphatcompany.com/mat-bang-biet-thu/"],
+        "project_url_pattern": r"mat-bang|biet-thu",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "trangkim": {
+        "name": "Kien truc Trang Kim - mat bang",
+        "sitemap": "https://kientructrangkim.com/sitemap_index.xml",
+        # Phai co CA HAI tu: sitemap cua ho tron ca chung cu mini, can ho cho
+        # thue, bai viet ve cau thang - chi loc "mat-bang" thi keo ve het.
+        "project_url_pattern": r"(mat-bang.*biet-thu|biet-thu.*mat-bang)",
+        "listing": [],
+        "max_pages": 1,
     },
     # Nguon dung SITEMAP thay vi duyet listing. Bat buoc voi nhung site chan
     # phan trang trong robots.txt - vietnamarch co "Disallow: */page/*", nen
