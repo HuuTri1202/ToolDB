@@ -75,7 +75,15 @@ REJECT_TEXT = re.compile(
     rf"anh{_S}bia|ảnh{_S}bìa|anh{_S}dai{_S}dien|thumbnail|"
     rf"mat{_S}bang{_S}mai|mặt{_S}bằng{_S}mái|mat{_S}bang{_S}tong{_S}the|"
     rf"ket{_S}cau|kết{_S}cấu|dien{_S}nuoc|điện{_S}nước|pccc|"
-    rf"thi{_S}cong|thi{_S}công|hoan{_S}thien|hoàn{_S}thiện)",
+    rf"thi{_S}cong|thi{_S}công|hoan{_S}thien|hoàn{_S}thiện|"
+    # Ban ve CHI TIET THI CONG - tieu chi 16 loai. Chung deu la lineart that
+    # nen bo loc anh khong phan biet duoc, phai chan tu ten file / alt.
+    rf"lat{_S}san|lát{_S}sàn|dinh{_S}vi|định{_S}vị|"
+    rf"thoat{_S}nuoc|thoát{_S}nước|cap{_S}dien|cấp{_S}điện|"
+    rf"tran{_S}thach{_S}cao|trần{_S}thạch{_S}cao|móng|"
+    # "chi tiet BAN VE cau thang" - tu chen giua nen phai cho phep khoang cach
+    rf"chi{_S}tiet.{{0,24}}(cau{_S}thang|cầu{_S}thang|lan{_S}can|lan{_S}căn)|"
+    rf"(cau{_S}thang|cầu{_S}thang).{{0,16}}chi{_S}tiet)",
     re.I,
 )
 
@@ -131,11 +139,29 @@ TITLE_CODE = re.compile(r"\b(BT[VB]?\s?\d+)\b", re.I)
 # Chi cai thu hai moi la thu ta can. Khong co lookahead thi "1 tầng 2 phòng ngủ"
 # se bi doc thanh "tang 2" - ghep chu "tầng" cua ve nay voi so "2" cua ve kia.
 ALT_TANG = re.compile(
+    # Chan chieu nguoc: "biet-thu-2-tang-26" la nha 2 TANG, so 26 chi la so thu
+    # tu anh. Khong chan thi hang loat anh bi gan sai hau to _t2.
+    r"(?<!\d)(?<!\d[\s_.-])"
     r"(?:tang|tầng)[\s_.-]*(\d)(?![\s_.-]*(?:phong|phòng|pn\b|nguoi|người))",
     re.I,
 )
-ALT_TRET = re.compile(r"(tret|trệt|tang\s*1|tầng\s*1)", re.I)
-ALT_TUM = re.compile(r"(tum|mai|mái)", re.I)
+ALT_TRET = re.compile(r"(tret|trệt)", re.I)
+
+# Mien Nam goi "tret" la tang 1, "lau 1" la tang 2, "lau 2" la tang 3...
+ALT_LAU = re.compile(r"(?:lau|lầu)[\s_.-]*(\d)", re.I)
+ALT_TUM = re.compile(r"(tum|san\s*thuong|sân\s*thượng)", re.I)
+
+# Chu de cua ban ve nam NGAY SAU cum nay trong ten file.
+# "mat-bang-ham-..." la ban ve tang ham; "mat-bang-tang-tret-...-ban-ham-..."
+# la ban ve tang tret cua can nha co ham. Khong doc theo vi tri thi lan lon.
+CHU_DE_BAN_VE = re.compile(r"(mat[-_\s]?bang|mặt\s*bằng|ban[-_\s]?ve|bản\s*vẽ|\bmb)",
+                           re.I)
+
+TANG_HAM = re.compile(r"^[-_\s]*(tang[-_\s]*)?(ham|hầm)\b", re.I)
+TANG_TUM = re.compile(r"^[-_\s]*(tang[-_\s]*)?tum\b", re.I)
+TANG_LUNG = re.compile(r"^[-_\s]*(tang[-_\s]*)?(lung|lửng)\b", re.I)
+TANG_SAN_THUONG = re.compile(r"^[-_\s]*(san[-_\s]*thuong|sân\s*thượng)", re.I)
+TANG_AP_MAI = re.compile(r"^[-_\s]*(ap[-_\s]*mai|áp\s*mái)", re.I)
 
 # ---------------------------------------------------------------- nguon
 SOURCES = {
@@ -171,6 +197,39 @@ SOURCES = {
         "listing": [],
         "max_pages": 1,
     },
+    # Hai nguon nay tung do thu ra toan render (ten file nhoi tu khoa SEO).
+    # Cao lai sau khi va lazy-load va noi nguong de kiem chung lai.
+    "decox": {
+        "name": "Decox Design - mat bang biet thu",
+        "seeds": ["https://decoxdesign.com/mat-bang-biet-thu.html",
+                  "https://decoxdesign.com/mat-bang-biet-thu-1-tang.html"],
+        "project_url_pattern": r"mat-bang|biet-thu",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "vinavic": {
+        "name": "Vinavic - ban ve biet thu",
+        "seeds": ["https://vinavic.vn/ban-ve/mat-bang-biet-thu-2-tang-n8459.html",
+                  "https://vinavic.vn/ban-ve"],
+        "project_url_pattern": r"ban-ve|mat-bang|biet-thu",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "nagopa": {
+        "name": "NAGOPA - ho so thiet ke biet thu",
+        "seeds": ["https://nagopa.com/ho-so-thiet-ke-biet-thu/"],
+        "project_url_pattern": r"biet-thu|ho-so",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "kienthinh": {
+        "name": "Kien Thinh - ban ve biet thu",
+        "seeds": ["https://kienthinh.vn/tin-tuc-kien-truc/"
+                  "ban-ve-biet-thu-2-tang-hien-dai-2.html"],
+        "project_url_pattern": r"biet-thu|ban-ve",
+        "listing": [],
+        "max_pages": 1,
+    },
     "tanphat": {
         "name": "Tan Phat - mat bang biet thu",
         "seeds": ["https://tanphatcompany.com/mat-bang-biet-thu-3-tang/",
@@ -182,9 +241,11 @@ SOURCES = {
     "trangkim": {
         "name": "Kien truc Trang Kim - mat bang",
         "sitemap": "https://kientructrangkim.com/sitemap_index.xml",
-        # Phai co CA HAI tu: sitemap cua ho tron ca chung cu mini, can ho cho
-        # thue, bai viet ve cau thang - chi loc "mat-bang" thi keo ve het.
-        "project_url_pattern": r"(mat-bang.*biet-thu|biet-thu.*mat-bang)",
+        # Sitemap cua ho tron ca chung cu, can ho cho thue, khach san - da co
+        # REJECT_PROJECT loc nhung thu do. Loc theo "biet-thu" de lay ca cac
+        # trang tong hop kieu "101 mau thiet ke biet thu dep", noi ho dang
+        # hang chuc ban ve trong mot trang.
+        "project_url_pattern": r"biet-thu",
         "listing": [],
         "max_pages": 1,
     },

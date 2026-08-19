@@ -33,6 +33,8 @@ import os
 import sys
 import urllib.parse as up
 
+import cv2
+
 import assess
 import config as C
 import crawler
@@ -73,6 +75,24 @@ def _next_index() -> int:
 def _filename(idx: int, tang: int | None, ext: str) -> str:
     suffix = f"_t{tang}" if tang else ""
     return f"{C.HOUSE_TYPE}_{idx:03d}{suffix}{ext}"
+
+
+def _luu_jpg(nguon: str, dich: str) -> None:
+    """Chuyen anh sang .jpg khi luu.
+
+    Nguon web tra ve ca .webp va .png; ho so nop yeu cau .jpg dong nhat.
+    Anh da la jpg thi doi cho, khong ma hoa lai (tranh mat chat luong lan hai).
+    """
+    if os.path.splitext(nguon)[1].lower() in (".jpg", ".jpeg"):
+        os.replace(nguon, dich)
+        return
+
+    img = cv2.imread(nguon)
+    if img is None:                       # khong doc duoc -> giu nguyen file
+        os.replace(nguon, dich)
+        return
+    cv2.imwrite(dich, img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    os.remove(nguon)
 
 
 def _loai_filename(ph: int, ext: str) -> str:
@@ -137,11 +157,24 @@ def cmd_crawl(args) -> None:
             print("    bo qua - ma du an da co")
             continue
 
+        # Du an co ban ve TRET khong? Quyet dinh cach danh so cac ban ve "lau":
+        # co tret -> tret la tang 1, lau 1 la tang 2; khong tret -> lau 1 la tang 1.
+        # Phai biet TRUOC khi xu ly tung anh, nen quet ca lo ung vien o day.
+        co_tret = False
+        for c in cands:
+            ten_c = c["url"].split("?")[0].rsplit("/", 1)[-1]
+            m = C.CHU_DE_BAN_VE.search(ten_c)
+            if m and C.ALT_TRET.search(ten_c[m.end():m.end() + 26]):
+                co_tret = True
+                break
+
         for ctx in cands:
+            ctx["co_tret_du_an"] = co_tret
             url = crawler.try_original(ctx["url"])
             ctx["url"] = url
-            ext = os.path.splitext(url.split("?")[0])[1].lower() or ".jpg"
-            tmp = os.path.join(TMP_DIR, f"_tmp{ext}")
+            tai_ext = os.path.splitext(url.split("?")[0])[1].lower() or ".jpg"
+            ext = ".jpg"          # ho so nop yeu cau .jpg dong nhat
+            tmp = os.path.join(TMP_DIR, f"_tmp{tai_ext}")
             if not crawler.download(url, tmp):
                 continue
 
@@ -168,8 +201,12 @@ def cmd_crawl(args) -> None:
                 # Gan hau to bat cu khi nao doc duoc tang cua ban ve, ke ca nha
                 # 1 tang. Tieu chi 08 doi moi file la mot tang - ten file noi ro
                 # thi nguoi cham doi chieu duoc ngay, khong phai mo anh len xem.
-                fname = _filename(idx, v.get("so_tang_tren_anh") or None, ext)
-            os.replace(tmp, os.path.join(DEST_DIR[state], fname))
+                # nhan_tang() doc CHU DE ban ve (phan sau chu "mat bang") nen
+                # phan biet duoc _th / _tum / _tl / _tst / _tap, khong chi _tN.
+                nhan = assess.nhan_tang(
+                    url.split("?")[0].rsplit("/", 1)[-1], co_tret)
+                fname = f"{C.HOUSE_TYPE}_{idx:03d}{nhan}{ext}"
+            _luu_jpg(tmp, os.path.join(DEST_DIR[state], fname))
 
             if state != "loai":
                 dedup.add(rep.phash, fname)
@@ -323,6 +360,144 @@ def cmd_probe(args) -> None:
               f"{uoc * 100:.0f} anh phai tai va loc neu crawl 100 du an.")
     print("  Buoc tiep theo: python main.py crawl --source "
           f"{args.source} --limit 5")
+
+
+# --------------------------------------------------------------------- danhso
+def cmd_danhso(args) -> None:
+    """Danh so lai lien tuc 001..N, giu nguyen hau to tang.
+
+    Sau nhieu phien cao va vai lan don dep, day so bi thung (thieu 26, 119...).
+    Lenh nay dong lai cho lien tuc de de kiem va de nop.
+
+    Doi ten qua HAI BUOC de khong bao gio de len file dang ton tai.
+    """
+    if not os.path.exists(EXCEL):
+        sys.exit(f"Khong thay {EXCEL}")
+
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL)
+    ws = wb["dataset"]
+    prefix = C.HOUSE_TYPE + "_"
+
+    # Gom file theo thu muc, sap theo so hien tai de giu nguyen thu tu cu
+    viec: list[tuple[str, str, str]] = []      # (thu_muc, ten_cu, hau_to)
+    for d in (IMG_DIR, TAM_DIR):
+        if not os.path.isdir(d):
+            continue
+        ten_ds = [t for t in os.listdir(d) if t.startswith(prefix)]
+
+        def khoa(t: str) -> int:
+            so = t[len(prefix):][:3]
+            return int(so) if so.isdigit() else 9999
+
+        for t in sorted(ten_ds, key=khoa):
+            goc, ext = os.path.splitext(t)
+            duoi = goc[len(prefix) + 3:]        # "_t2" hoac ""
+            viec.append((d, t, duoi + ext))
+
+    doi: dict[str, str] = {}
+    for i, (d, cu, duoi) in enumerate(viec, 1):
+        moi = f"{prefix}{i:03d}{duoi}"
+        if moi != cu:
+            doi[cu] = moi
+
+    print(f"{len(viec)} file | {len(doi)} file se doi so")
+    for cu, moi in list(doi.items())[:10]:
+        print(f"  {cu:<26} -> {moi}")
+    if len(doi) > 10:
+        print(f"  ... con {len(doi) - 10} file")
+
+    if not args.that:
+        print("\nChay lai voi --that de thuc hien.")
+        return
+
+    # Buoc 1: doi sang ten tam, tranh de len file dang co
+    tam: list[tuple[str, str, str]] = []
+    for i, (d, cu, duoi) in enumerate(viec, 1):
+        moi = f"{prefix}{i:03d}{duoi}"
+        if moi == cu:
+            continue
+        t = os.path.join(d, f"__dsl_{i:04d}{os.path.splitext(cu)[1]}")
+        os.replace(os.path.join(d, cu), t)
+        tam.append((t, os.path.join(d, moi), cu))
+
+    # Buoc 2: tu ten tam sang ten cuoi
+    for t, dich, _ in tam:
+        os.replace(t, dich)
+
+    sua = 0
+    for row in ws.iter_rows(min_row=2):
+        v = str(row[0].value or "")
+        if v in doi:
+            row[0].value = doi[v]
+            sua += 1
+    wb.save(EXCEL)
+    print(f"\nDa doi {len(tam)} file | Excel cap nhat {sua} dong")
+
+
+# --------------------------------------------------------------------- retag
+def cmd_retag(args) -> None:
+    """Gan lai hau to _t1/_t2 cho anh DA CO, khong phai cao lai.
+
+    Doc lai so tang tu cot _url_nguon (URL anh goc) trong Excel, roi doi ten
+    file tren dia va cap nhat cot ten_file cho khop.
+    """
+    if not os.path.exists(EXCEL):
+        sys.exit(f"Khong thay {EXCEL}")
+
+    from openpyxl import load_workbook
+    wb = load_workbook(EXCEL)
+    ws = wb["dataset"]
+    base = len(C.EXCEL_COLUMNS)              # _trang_thai _url_nguon ...
+
+    doi, giu, thieu = 0, 0, 0
+    for row in ws.iter_rows(min_row=2):
+        o_ten, o_url = row[0], row[base + 1]
+        ten = str(o_ten.value or "")
+        if not ten.startswith(C.HOUSE_TYPE + "_"):
+            continue                          # mau 'loai' dat ten theo pHash
+
+        # CHI doc URL anh goc. Khong doc ghi_chu: do la du lieu tool tu suy ra,
+        # doc lai se nhan ban loi cu (mot mau tung bi ghi nham "tang 7").
+        tang = assess.so_tang({"url": str(o_url.value or "")})
+        goc, ext = os.path.splitext(ten)
+        so = goc[len(C.HOUSE_TYPE) + 1:][:3]
+
+        if not tang:
+            # Khong suy ra duoc tu URL -> GIU nguyen ten cu. Nhieu mau co hau to
+            # nho alt/caption luc cao, ma Excel khong luu alt, nen xoa la mat.
+            giu += 1
+            continue
+        moi = f"{C.HOUSE_TYPE}_{so}_t{tang}{ext}"
+        if moi == ten:
+            giu += 1
+            continue
+
+        cu_dd = moi_dd = None
+        for d in (IMG_DIR, TAM_DIR, LOAI_DIR):
+            if os.path.exists(os.path.join(d, ten)):
+                cu_dd, moi_dd = os.path.join(d, ten), os.path.join(d, moi)
+                break
+        if cu_dd is None:
+            thieu += 1
+            print(f"  thieu file tren dia: {ten}")
+            continue
+        if os.path.exists(moi_dd):
+            print(f"  BO QUA (trung ten): {ten} -> {moi}")
+            continue
+
+        print(f"  {ten:<26} -> {moi}")
+        if args.that:
+            os.replace(cu_dd, moi_dd)
+            o_ten.value = moi
+        doi += 1
+
+    if args.that:
+        wb.save(EXCEL)
+    print(f"\n{doi} file {'da' if args.that else 'SE'} doi ten | "
+          f"{giu} giu nguyen | {thieu} thieu file")
+    if not args.that:
+        print("Chay lai voi --that de thuc hien.")
 
 
 # --------------------------------------------------------------------- screen
@@ -498,6 +673,14 @@ def main() -> None:
     p.add_argument("--source", default="neohouse")
     p.add_argument("--limit", type=int, default=50, help="so trang du an toi da")
     p.set_defaults(func=cmd_crawl)
+
+    p = sub.add_parser("danhso", help="danh so lai lien tuc 001..N")
+    p.add_argument("--that", action="store_true", help="thuc hien that")
+    p.set_defaults(func=cmd_danhso)
+
+    p = sub.add_parser("retag", help="gan lai hau to _t1/_t2 cho anh da co")
+    p.add_argument("--that", action="store_true", help="thuc hien that")
+    p.set_defaults(func=cmd_retag)
 
     p = sub.add_parser("screen", help="sang nhieu nguon mot luot truoc khi cao")
     p.add_argument("--urls", nargs="+", help="danh sach URL cach nhau bang dau cach")

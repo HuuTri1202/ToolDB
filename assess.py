@@ -39,14 +39,63 @@ def _so_tang(ctx: dict) -> int:
 
     Tieu de du an luon chua "N tang" (so tang cua can nha), khong noi gi ve
     tang cua ban ve nay - dua vao se sinh ra so tang sai.
+
+    TEN FILE anh la tin hieu MANH NHAT va truoc day bi bo qua - don vi thiet ke
+    thuong dat ten kieu "mat-bang-tang-2-...jpg" hoac "...-tang-tret-...jpg".
     """
-    blob = f"{ctx.get('alt', '')} {ctx.get('caption', '')}"
-    m = C.ALT_TANG.search(blob)
-    if m:
-        return int(m.group(1))
-    if C.ALT_TRET.search(blob):
-        return 1
+    ten_file = (ctx.get("url", "") or "").split("?")[0].rsplit("/", 1)[-1]
+    for blob in (ten_file, f"{ctx.get('alt', '')} {ctx.get('caption', '')}"):
+        if not blob:
+            continue
+        m = C.ALT_TANG.search(blob)
+        if m:
+            return int(m.group(1))
+        m = C.ALT_LAU.search(blob)       # mien Nam: "lau 1" = tang 2
+        if m:
+            return int(m.group(1)) + 1
+        if C.ALT_TRET.search(blob):
+            return 1
     return 0
+
+
+so_tang = _so_tang                       # ten cong khai, dung cho lenh retag
+
+
+# Tang khong danh so duoc: ten rieng thay cho _tN
+TANG_DAC_BIET = (
+    ("_th", C.TANG_HAM),
+    ("_tum", C.TANG_TUM),
+    ("_tl", C.TANG_LUNG),
+    ("_tst", C.TANG_SAN_THUONG),
+    ("_tap", C.TANG_AP_MAI),
+)
+
+
+def nhan_tang(ten_file: str, co_tret_trong_du_an: bool = True) -> str:
+    """Tra ve hau to tang tu ten file anh: '_t2', '_th', '_tum'... hoac ''.
+
+    Chi doc phan NGAY SAU chu "mat bang" / "ban ve" - do moi la chu de cua
+    ban ve. Quet ca ten file se sai: "mat-bang-tang-tret-...-ban-ham-1-tret"
+    la mat bang TRET cua can nha CO ham, khong phai mat bang ham.
+    """
+    m = C.CHU_DE_BAN_VE.search(ten_file)
+    chu_de = ten_file[m.end():m.end() + 26] if m else ten_file
+
+    for hau_to, pat in TANG_DAC_BIET:
+        if pat.search(chu_de):
+            return hau_to
+
+    m = C.ALT_TANG.search(chu_de)
+    if m:
+        return f"_t{m.group(1)}"
+    m = C.ALT_LAU.search(chu_de)
+    if m:
+        # Du an co ban ve tret -> tret la tang 1, lau 1 la tang 2.
+        # Du an khong co tret -> lau 1 chinh la tang 1.
+        return f"_t{int(m.group(1)) + (1 if co_tret_trong_du_an else 0)}"
+    if C.ALT_TRET.search(chu_de):
+        return "_t1"
+    return ""
 
 
 def judge(ctx: dict, rep) -> dict:
