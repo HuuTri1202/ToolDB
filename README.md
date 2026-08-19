@@ -121,6 +121,42 @@ Cổng máy nằm trong `assess.gate()`. Nó chỉ trả về `tam` hoặc `loai
 
 Mẫu `tam` và `dat` cùng dùng dải số `bietthu_NNN`; mẫu `loai` đặt tên theo pHash (`loai_<hash>.jpg`) nên không tiêu số thứ tự và không ghi đè lên nhau.
 
+## Quy ước đặt tên tầng
+
+```
+bietthu_042_t2.jpg     tầng 2
+bietthu_069_th.jpg     tầng hầm
+bietthu_104_tum.jpg    tum
+```
+
+| Hậu tố | Tầng |
+|---|---|
+| `_t1` `_t2` `_t3`… | tầng đánh số |
+| `_th` | tầng hầm |
+| `_tl` | tầng lửng |
+| `_tst` | sân thượng |
+| `_tap` | áp mái |
+| `_tum` | tum |
+
+Bản vẽ Việt Nam có nhiều tầng không đánh số được. Gộp chúng vào `_t1` là sai, bỏ trống thì mất thông tin, nên mỗi loại có nhãn riêng.
+
+**Quy tắc "lầu" tính theo từng dự án.** Dự án **có** bản vẽ trệt: trệt là tầng 1, lầu 1 là tầng 2. Dự án **không có** bản vẽ trệt: lầu 1 chính là tầng 1. Nếu áp một quy tắc cứng cho cả hai, 32/95 dự án sẽ có hai bản vẽ khác nhau cùng mang nhãn `_t1`.
+
+**Nhãn đọc từ chủ đề bản vẽ, không phải cả tên file.** `assess.nhan_tang()` chỉ đọc phần ngay sau cụm "mặt bằng" / "bản vẽ". Quét cả tên file thì `mat-bang-ham-biet-thu-tren-doi-ban-ham-1-tret.jpg` bị đọc thành *trệt* — mô tả căn nhà lấn át chủ đề bản vẽ.
+
+Ảnh cũ gắn lại bằng `python main.py retag --that`, đánh số lại liên tục bằng `python main.py danhso --that`.
+
+## Bảo trì
+
+| Lệnh | Việc |
+|---|---|
+| `python main.py danhso --that` | đánh số lại liên tục 001..N |
+| `python main.py retag --that` | gắn lại hậu tố tầng cho ảnh đã có |
+| `python doi_sang_jpg.py --that` | đổi webp/jpeg sang jpg |
+| `python doi_soat.py --that` | đối chiếu Excel với thư mục ảnh bằng pHash |
+
+**Không chạy các lệnh này khi đang có mẻ cào chạy nền.** Cả hai bên đều mở, sửa rồi lưu cùng file Excel nên sẽ ghi đè lẫn nhau. Đã từng làm mất liên kết của 27 dòng vì lỗi này — `doi_soat.py` sinh ra để dọn hậu quả đó.
+
 Lý do cụ thể nằm ở cột `ghi_chu`. Cuối tuần 1 lọc `output/_tam/` theo mã TC và xử lý hàng loạt — một lần sửa cấu hình thường cứu được vài trăm mẫu.
 
 ## Lưu ý riêng của biệt thự

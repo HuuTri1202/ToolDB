@@ -157,6 +157,16 @@ ALT_TUM = re.compile(r"(tum|san\s*thuong|sân\s*thượng)", re.I)
 CHU_DE_BAN_VE = re.compile(r"(mat[-_\s]?bang|mặt\s*bằng|ban[-_\s]?ve|bản\s*vẽ|\bmb)",
                            re.I)
 
+# Cac cum chi tang / chi loai ban ve - go bo de lay ten CAN NHA (xem
+# assess.khoa_can_nha). Hai ban ve cua cung mot can chi khac nhau o cum nay.
+CUM_CHI_TANG = re.compile(
+    r"(mat[-_]?bang|ban[-_]?ve|cong[-_]?nang|vat[-_]?dung|bo[-_]?tri"
+    r"|noi[-_]?that|kien[-_]?truc|tong[-_]?the"
+    r"|tang[-_]?tret|tret|tang[-_]?ham|ham|tang[-_]?lung|lung|tum"
+    r"|san[-_]?thuong|ap[-_]?mai|tang[-_]?\d|lau[-_]?\d)",
+    re.I,
+)
+
 TANG_HAM = re.compile(r"^[-_\s]*(tang[-_\s]*)?(ham|hầm)\b", re.I)
 TANG_TUM = re.compile(r"^[-_\s]*(tang[-_\s]*)?tum\b", re.I)
 TANG_LUNG = re.compile(r"^[-_\s]*(tang[-_\s]*)?(lung|lửng)\b", re.I)
@@ -212,6 +222,13 @@ SOURCES = {
         "seeds": ["https://vinavic.vn/ban-ve/mat-bang-biet-thu-2-tang-n8459.html",
                   "https://vinavic.vn/ban-ve"],
         "project_url_pattern": r"ban-ve|mat-bang|biet-thu",
+        "listing": [],
+        "max_pages": 1,
+    },
+    "nhadepktv": {
+        "name": "Nha Dep KTV - biet thu",
+        "sitemap": "https://nhadepktv.vn/sitemap_index.xml",
+        "project_url_pattern": r"biet-thu",
         "listing": [],
         "max_pages": 1,
     },

@@ -11,6 +11,9 @@ noi ro la phoi canh). Phan con lai deu chuyen sang 'tam' cho nguoi quyet.
 """
 from __future__ import annotations
 
+import os
+import re
+
 import config as C
 
 # Cac cot chi nguoi moi tra loi duoc -> de trong trong Excel.
@@ -61,6 +64,45 @@ def _so_tang(ctx: dict) -> int:
 so_tang = _so_tang                       # ten cong khai, dung cho lenh retag
 
 
+def _cat_chu_de(ten_file: str) -> str:
+    """Cat phan chu de cua ban ve: doan ngay sau cac cum dan nhu "mat bang".
+
+    Ten file thuong chong nhieu cum dan lien tiep:
+        ban-ve-mat-bang-tang-lung-biet-thu-...
+        ^^^^^^ ^^^^^^^^ chu de that bat dau tu day
+    Chi cat sau cum DAU thi chu de thanh "-mat-bang-tang-lung", va tang lung
+    khong nhan ra duoc. Phai an het cac cum dan lien tiep.
+    """
+    con = ten_file
+    for _ in range(4):
+        m = C.CHU_DE_BAN_VE.match(con.lstrip("-_ "))
+        if m:
+            con = con.lstrip("-_ ")[m.end():]
+            continue
+        m = C.CHU_DE_BAN_VE.search(con)
+        if not m:
+            break
+        con = con[m.end():]
+    return con.lstrip("-_ ")[:26]
+
+
+def khoa_can_nha(ten_file: str) -> str:
+    """Khoa nhan dien CAN NHA tu ten file anh.
+
+    Hai ban ve cua cung mot can co phan ten chung, chi khac cum chi tang:
+        mat-bang-TANG-TRET-biet-thu-tren-doi-ban-ham-1-tret.jpg
+        mat-bang-HAM-biet-thu-tren-doi-ban-ham-1-tret.jpg
+    Bo cum chi tang di thi con lai chinh la ten can nha.
+
+    Can thiet vi khong the gom theo trang du an: nguon kieu TRANG TONG HOP
+    (noithaticon, decox) co mot trang chua hang chuc can khac nhau.
+    """
+    goc = os.path.splitext(ten_file)[0].lower()
+    goc = C.CUM_CHI_TANG.sub("", goc)
+    goc = re.sub(r"[^a-z0-9]+", "-", goc).strip("-")
+    return re.sub(r"-\d{1,2}$", "", goc)     # bo so thu tu anh o cuoi
+
+
 # Tang khong danh so duoc: ten rieng thay cho _tN
 TANG_DAC_BIET = (
     ("_th", C.TANG_HAM),
@@ -71,30 +113,39 @@ TANG_DAC_BIET = (
 )
 
 
-def nhan_tang(ten_file: str, co_tret_trong_du_an: bool = True) -> str:
-    """Tra ve hau to tang tu ten file anh: '_t2', '_th', '_tum'... hoac ''.
+def nhan_tang(ten_file: str, can_co_tret: bool = False) -> str:
+    """Tra ve hau to tang tu ten file anh: '', '_t1', '_t2', '_th', '_tum'...
+
+    QUY UOC: moi CAN NHA mot so thu tu, hau to dem tang PHIA TREN tret.
+        bietthu_002.jpg      mat bang TRET  (khong hau to)
+        bietthu_002_t1.jpg   tang thu nhat tren tret
+        bietthu_002_t2.jpg   tang thu hai tren tret
+
+    `can_co_tret` = can nha nay co ban ve tret khong. Quan trong vi cac nguon
+    dem khac nhau: co nguon ghi "tret, tang 2, tang 3" (tret la tang 1), co
+    nguon ghi "tret, lau 1, lau 2". Khi da co ban ve tret thi "tang N" chinh
+    la tang thu N-1 tren tret, con "lau N" la tang thu N.
 
     Chi doc phan NGAY SAU chu "mat bang" / "ban ve" - do moi la chu de cua
     ban ve. Quet ca ten file se sai: "mat-bang-tang-tret-...-ban-ham-1-tret"
     la mat bang TRET cua can nha CO ham, khong phai mat bang ham.
     """
-    m = C.CHU_DE_BAN_VE.search(ten_file)
-    chu_de = ten_file[m.end():m.end() + 26] if m else ten_file
+    chu_de = _cat_chu_de(ten_file)
 
     for hau_to, pat in TANG_DAC_BIET:
         if pat.search(chu_de):
             return hau_to
 
+    if C.ALT_TRET.search(chu_de):
+        return ""                       # tret = mat dat, khong mang so
     m = C.ALT_TANG.search(chu_de)
     if m:
-        return f"_t{m.group(1)}"
+        so = int(m.group(1))
+        # Nguon dem tret la tang 1 -> "tang 2" la tang thu nhat tren tret
+        return f"_t{so - 1}" if can_co_tret and so > 1 else f"_t{so}"
     m = C.ALT_LAU.search(chu_de)
     if m:
-        # Du an co ban ve tret -> tret la tang 1, lau 1 la tang 2.
-        # Du an khong co tret -> lau 1 chinh la tang 1.
-        return f"_t{int(m.group(1)) + (1 if co_tret_trong_du_an else 0)}"
-    if C.ALT_TRET.search(chu_de):
-        return "_t1"
+        return f"_t{m.group(1)}"        # lau N = tang thu N tren tret
     return ""
 
 

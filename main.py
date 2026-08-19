@@ -100,6 +100,42 @@ def _loai_filename(ph: int, ext: str) -> str:
     return f"loai_{ph:016x}{ext}"
 
 
+def _load_so_can() -> dict[tuple, int]:
+    """Doc lai so thu tu da cap cho tung CAN NHA tu Excel.
+
+    Nho vay cao lai lan hai se gan tiep ban ve cua mot can vao dung so cu,
+    thay vi tao ra mot so moi cho cung can do.
+    """
+    if not os.path.exists(EXCEL):
+        return {}
+    from openpyxl import load_workbook
+    ws = load_workbook(EXCEL, read_only=True)["dataset"]
+    base = len(C.EXCEL_COLUMNS)
+    prefix = C.HOUSE_TYPE + "_"
+    ra: dict[tuple, int] = {}
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        ten = str(row[0] or "")
+        if not ten.startswith(prefix) or len(row) < base + 2:
+            continue
+        so = os.path.splitext(ten)[0][len(prefix):][:3]
+        if not so.isdigit():
+            continue
+        ten_goc = str(row[base + 1] or "").rsplit("/", 1)[-1]
+        ra.setdefault((str(row[2] or ""), assess.khoa_can_nha(ten_goc)), int(so))
+    return ra
+
+
+def _ten_moi(so: int, nhan: str, ext: str, thu_muc: str) -> str:
+    """Ten file cho mot ban ve; them chu cai neu can do da co ban ve cung tang."""
+    goc = f"{C.HOUSE_TYPE}_{so:03d}{nhan}"
+    if not os.path.exists(os.path.join(thu_muc, goc + ext)):
+        return goc + ext
+    for c in "bcdefgh":
+        if not os.path.exists(os.path.join(thu_muc, f"{goc}{c}{ext}")):
+            return f"{goc}{c}{ext}"
+    return f"{goc}z{ext}"
+
+
 def _load_dedup() -> imgcheck.DedupIndex:
     hashes, codes = excel_out.load_dedup(EXCEL)
     if hashes or codes:
@@ -138,6 +174,7 @@ def cmd_crawl(args) -> None:
         sys.exit(f"Nguon khong hop le. Co: {', '.join(C.SOURCES)}")
 
     dedup = _load_dedup()
+    so_can = _load_so_can()
     idx = _next_index()
     rows: list[dict] = []
     stats = {"duyet": 0, "loc_text": 0, "loc_anh": 0, "trung": 0,
@@ -157,19 +194,7 @@ def cmd_crawl(args) -> None:
             print("    bo qua - ma du an da co")
             continue
 
-        # Du an co ban ve TRET khong? Quyet dinh cach danh so cac ban ve "lau":
-        # co tret -> tret la tang 1, lau 1 la tang 2; khong tret -> lau 1 la tang 1.
-        # Phai biet TRUOC khi xu ly tung anh, nen quet ca lo ung vien o day.
-        co_tret = False
-        for c in cands:
-            ten_c = c["url"].split("?")[0].rsplit("/", 1)[-1]
-            m = C.CHU_DE_BAN_VE.search(ten_c)
-            if m and C.ALT_TRET.search(ten_c[m.end():m.end() + 26]):
-                co_tret = True
-                break
-
         for ctx in cands:
-            ctx["co_tret_du_an"] = co_tret
             url = crawler.try_original(ctx["url"])
             ctx["url"] = url
             tai_ext = os.path.splitext(url.split("?")[0])[1].lower() or ".jpg"
@@ -198,19 +223,22 @@ def cmd_crawl(args) -> None:
             if state == "loai":
                 fname = _loai_filename(rep.phash, ext)
             else:
-                # Gan hau to bat cu khi nao doc duoc tang cua ban ve, ke ca nha
-                # 1 tang. Tieu chi 08 doi moi file la mot tang - ten file noi ro
-                # thi nguoi cham doi chieu duoc ngay, khong phai mo anh len xem.
-                # nhan_tang() doc CHU DE ban ve (phan sau chu "mat bang") nen
-                # phan biet duoc _th / _tum / _tl / _tst / _tap, khong chi _tN.
-                nhan = assess.nhan_tang(
-                    url.split("?")[0].rsplit("/", 1)[-1], co_tret)
-                fname = f"{C.HOUSE_TYPE}_{idx:03d}{nhan}{ext}"
+                # MOI CAN NHA mot so; hau to phan biet tang trong can do:
+                #   bietthu_028.jpg  _t1  _t2  = tret, tang 1, tang 2 CUNG can
+                # Khong the gom theo trang du an: nguon kieu trang tong hop co
+                # mot trang chua hang chuc can, nen phai rut ten can tu ten file.
+                ten_goc = url.split("?")[0].rsplit("/", 1)[-1]
+                khoa = (purl, assess.khoa_can_nha(ten_goc))
+                if khoa not in so_can:
+                    so_can[khoa] = idx
+                    idx += 1
+                fname = _ten_moi(so_can[khoa], assess.nhan_tang(ten_goc),
+                                 ext, DEST_DIR[state])
             _luu_jpg(tmp, os.path.join(DEST_DIR[state], fname))
 
             if state != "loai":
                 dedup.add(rep.phash, fname)
-                idx += 1
+                # idx da tang o tren khi gap CAN moi - khong tang theo tung anh
             rows.append(_row(fname, ctx, rep, v, state))
             print(f"    {state.upper():<5} {fname}  "
                   f"{rep.width}x{rep.height} duong_thang={rep.axis_lines}")
